@@ -43,7 +43,9 @@ class IOStream(LineReceiver):
         """
         if self.gamesession is not None:
             self.gamesession.running = False
-        print("{} lost connection.".format(self.longname))
+        msg = "{} lost connection.".format(self.longname)
+        print(msg)
+        self.broadcast_noti(msg)
 
     def sendLine(self, line):
         """
@@ -57,6 +59,18 @@ class IOStream(LineReceiver):
         our username and hostname.
         """
         return "[{}] {}".format(self.longname, line.strip())
+
+    def broadcast_msg(self, line):
+        """
+        Send a formatted message to each connected user except this one.
+        """
+        self.factory.broadcast_message(self.msg_format(line), exception=self)
+
+    def broadcast_noti(self, line):
+        """
+        Send a formatted server notification to each connected user except this one.
+        """
+        self.factory.broadcast_message(line, exception=self)
 
     def lineReceived(self, line):
         """
@@ -74,7 +88,7 @@ class IOStream(LineReceiver):
             self.check_username(line)
 
         elif self.state == states.REGISTERED:
-            self.factory.broadcast_message(self.msg_format(line))
+            self.broadcast_msg(line)
 
         elif self.state == states.REQUESTING_PASSWORD:
             self.check_password(line)
@@ -83,11 +97,21 @@ class IOStream(LineReceiver):
             self.create_account(line)
 
     def welcome(self):
+        """
+        Welcome the user to the chatroom.
+        Show how many users there are, and let the others know.
+        """
         self.sendLine("Welcome {}!".format(self.name))
         self.sendLine("{} people online currently."
                       "".format(self.factory.num_users))
+        self.broadcast_noti("{} joined the chatroom."
+                            "".format(self.longname))
 
     def create_account(self, pword):
+        """
+        Make an account using the requested username and password.
+        Welcome the user and log their entrance.
+        """
         self.factory.users[self.requested_uname] = pword
         self.name = self.requested_uname
         self.state = states.REGISTERED
@@ -99,9 +123,15 @@ class IOStream(LineReceiver):
               "".format(self.addr.host, self.name))
 
     def check_username(self, uname):
+        """
+        Check if the given username is valid.
+        If so, proceed with login or registration.
+        If not, stay in the same state and ask for a repeat.
+        """
         def valid_username(attempt):
             valid = re.compile("^[A-Za-z0-9 ]+$")
             return bool(valid.fullmatch(attempt))
+
         if valid_username(uname):
             # If the line we got is a valid username, try to register.
             self.got_username(uname)
@@ -110,6 +140,10 @@ class IOStream(LineReceiver):
             self.sendLine("Please enter a valid username. (Type below and press Return)")
 
     def check_password(self, pword):
+        """
+        Checks the user's password against the value stored for that username.
+        If it's right, allow them in. If not, just stay in the same state.
+        """
         if self.factory.users[self.requested_uname] == pword:
             self.name = self.requested_uname
             self.state = states.REGISTERED
@@ -118,16 +152,25 @@ class IOStream(LineReceiver):
             self.sendLine("Password incorrect. Enter password:")
 
     def login(self, uname):
+        """
+        Called when the requested username is preexisting.
+        """
         self.sendLine("Password:")
         self.requested_uname = uname
         self.state = states.REQUESTING_PASSWORD
 
     def register(self, uname):
+        """
+        Called when the requested username is new.
+        """
         self.requested_uname = uname
         self.sendLine("Enter new password:")
         self.state = states.REQUESTING_NEW_PASSWORD
 
     def got_username(self, uname):
+        """
+        Called when the user has entered their username.
+        """
         if uname in self.factory.users:
             self.login(uname)
         else:
@@ -135,6 +178,9 @@ class IOStream(LineReceiver):
 
     @property
     def longname(self):
+        """
+        Formats the username and host address.
+        """
         return "{}({}:{})".format(self.name, self.addr.host, self.addr.port)
 
 
@@ -150,11 +196,18 @@ class IOStreamFactory(protocol.Factory):
     def num_users(self):
         return len(self.users)
 
-    def broadcast_message(self, message):
+    def broadcast_message(self, message, exception=None):
+        """
+        Broadcast `message` to every connected user except `exception`.
+        """
         for conn in self.connections.values():
-            conn.sendLine(message)
+            if conn is not exception:
+                conn.sendLine(message)
 
     def buildProtocol(self, addr):
+        """
+        Create and return a new connection instance, adding it to a dict of users.
+        """
         self.connections[addr] = IOStream(self, addr)
         return self.connections[addr]
 
