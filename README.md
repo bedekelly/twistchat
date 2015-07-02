@@ -5,6 +5,7 @@ Miniature IRC-style chatroom written in about 200 lines of Python. Only stores s
 
 Todo:
 
+* Add a /quit or /leave command with "reason" parameter.
 * Store accounts more permanently
 * Improve username formatting
 * ~~Broadcast messages when users join and leave~~
