@@ -18,15 +18,15 @@ class states:
     REQUESTING_NEW_PASSWORD = 3
 
 
-class IOStream(LineReceiver):
+class UserSession(LineReceiver):
     """
-    Define what happens when we get a new connection.
+    Represent a single user-session. Handles registering, logins, sending messages etc.
     """
 
     def __init__(self, factory, addr):
         self.factory = factory
         self.addr = addr
-        self.gamesession = None
+        self.reason_for_quit = ""
         self.name = "Anonymous"
 
     def connectionMade(self):
@@ -39,26 +39,27 @@ class IOStream(LineReceiver):
 
     def connectionLost(self, reason):
         """
-        When we lose a connection, stop the gamesession eval thread if we have one.
+        When we lose a connection, let the other users know.
         """
-        if self.gamesession is not None:
-            self.gamesession.running = False
         msg = "{} lost connection.".format(self.longname)
+        if self.reason_for_quit:
+            msg += ' ("{}")'.format(self.reason_for_quit)
         print(msg)
         self.broadcast_noti(msg)
+        self.factory.remove_connection(self)
 
     def sendLine(self, line):
         """
-        Override the LineReceiver's sendLine method to use strings instead of bytes.
+        Wrap the LineReceiver's sendLine method to use strings instead of bytes.
         """
         super().sendLine(bytes(line, encoding="utf-8"))
 
     def msg_format(self, line):
         """
-        When we're sending a message, prepend a nicely-formatted version of
-        our username and hostname.
+        When we're sending a message, prepend a nicely-formatted version of our username
+        and hostname.
         """
-        return "[{}] {}".format(self.longname, line.strip())
+        return "[{}] {}".format(self.name, line.strip())
 
     def broadcast_msg(self, line):
         """
@@ -72,6 +73,29 @@ class IOStream(LineReceiver):
         """
         self.factory.broadcast_message(line, exception=self)
 
+    def command_or_msg(self, line):
+        """
+        Check if a line sent from a registered user is a command or a message.
+        If it's a command, do what they say.
+        If it's a message, broadcast it to the other users.
+        """
+        is_command = lambda l: l.startswith("/") or l.startswith("^")
+        if is_command(line):
+            self.handle_command(line)
+        else:
+            self.broadcast_msg(line)
+
+    def handle_command(self, text):
+        """
+        Process a command like /quit or /leave.
+        """
+        cmd, *params = text.split()
+        print("Command from {}: {}".format(self.longname, cmd))
+        if cmd in ("/quit", "/leave", "^C"):
+            reason = ' '.join(params)
+            self.reason_for_quit = reason
+            self.transport.loseConnection()
+            
     def lineReceived(self, line):
         """
         When we get a new line, check what state we're in and act accordingly.
@@ -86,13 +110,10 @@ class IOStream(LineReceiver):
         # the user's name.
         if self.state == states.REQUESTING_NAME:
             self.check_username(line)
-
         elif self.state == states.REGISTERED:
-            self.broadcast_msg(line)
-
+            self.command_or_msg(line)
         elif self.state == states.REQUESTING_PASSWORD:
             self.check_password(line)
-
         elif self.state == states.REQUESTING_NEW_PASSWORD:
             self.create_account(line)
 
@@ -101,6 +122,9 @@ class IOStream(LineReceiver):
         Welcome the user to the chatroom.
         Show how many users there are, and let the others know.
         """
+        print("Anonymous({}) logged in as {}"
+              "".format(self.addr.host, self.name))
+
         self.sendLine("Welcome {}!".format(self.name))
         self.sendLine("{} people online currently."
                       "".format(self.factory.num_users))
@@ -128,12 +152,11 @@ class IOStream(LineReceiver):
         If so, proceed with login or registration.
         If not, stay in the same state and ask for a repeat.
         """
-        def valid_username(attempt):
-            valid = re.compile("^[A-Za-z0-9 ]+$")
-            return bool(valid.fullmatch(attempt))
+        valid = re.compile("^[A-Za-z0-9 ]+$")
+        is_valid = lambda attempt: bool(valid.fullmatch(attempt))
 
-        if valid_username(uname):
-            # If the line we got is a valid username, try to register.
+        if is_valid(uname):
+            # If the line we got is a valid username, proceed to register or login.
             self.got_username(uname)
         else:
             # If the line is empty or invalid, error and try again.
@@ -184,7 +207,7 @@ class IOStream(LineReceiver):
         return "{}({}:{})".format(self.name, self.addr.host, self.addr.port)
 
 
-class IOStreamFactory(protocol.Factory):
+class UserSessionFactory(protocol.Factory):
     """
     Store state across sessions (currently, just the number of players).
     """
@@ -194,7 +217,13 @@ class IOStreamFactory(protocol.Factory):
 
     @property
     def num_users(self):
-        return len(self.users)
+        return len(self.connections)
+
+    def remove_connection(self, conn):
+        """
+        Remove a connection from our mapping.
+        """
+        del self.connections[conn.addr]
 
     def broadcast_message(self, message, exception=None):
         """
@@ -208,10 +237,10 @@ class IOStreamFactory(protocol.Factory):
         """
         Create and return a new connection instance, adding it to a dict of users.
         """
-        self.connections[addr] = IOStream(self, addr)
+        self.connections[addr] = UserSession(self, addr)
         return self.connections[addr]
 
 
-reactor.listenTCP(8001, IOStreamFactory())
+reactor.listenTCP(8001, UserSessionFactory())
 print("Server running at localhost:8001. Connect using `telnet localhost 8001`.")
 reactor.run()
