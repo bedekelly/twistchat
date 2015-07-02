@@ -7,7 +7,6 @@ Todo:
 
 * Store accounts more permanently
 * Improve username formatting
-* Change telnet prompts (probably can't do this)
 * ~~Broadcast messages when users join and leave~~
 * Take another look at the `users` and `connections` dicts - probably some redundancy there
 * ~~Don't send messages to yourself~~
