@@ -8,6 +8,7 @@ import pickle
 from twisted.internet import reactor, protocol
 from twisted.protocols.basic import LineReceiver
 
+PORT = 8001
 USERS_FILE = ".chatroom_users.dat"
 
 class states:
@@ -266,7 +267,7 @@ def load_users():
         return {}
 
         
-reactor.listenTCP(8001, UserSessionFactory())
-print("Server running at localhost:8001. Connect using `telnet localhost 8001`.")
-
+reactor.listenTCP(PORT, UserSessionFactory())
+print("Server running at localhost:{p}. Connect using `telnet localhost {p}`."
+      "".format(p=PORT))
 reactor.run()
