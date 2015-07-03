@@ -5,11 +5,12 @@ A mini chatroom server written in Twisted.
 
 import re
 import pickle
+from os.path import expanduser as abs_path
 from twisted.internet import reactor, protocol
 from twisted.protocols.basic import LineReceiver
 
 PORT = 8001
-USERS_FILE = ".chatroom_users.dat"
+USERS_FILE = abs_path("~/.chatroom_users.dat")
 
 class states:
     """
