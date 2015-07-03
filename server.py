@@ -106,6 +106,11 @@ class UserSession(LineReceiver):
             else:
                 self.sendLine("Usage: {} <new nick>"
                               "".format(cmd))
+        elif cmd == "/me":
+            if params:
+                msg = "* {} {}".format(self.name,' '.join(params))
+                self.factory.broadcast_message(msg)
+
             
     def lineReceived(self, line):
         """
