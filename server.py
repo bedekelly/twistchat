@@ -4,9 +4,11 @@ A mini chatroom server written in Twisted.
 """
 
 import re
+import pickle
 from twisted.internet import reactor, protocol
 from twisted.protocols.basic import LineReceiver
 
+USERS_FILE = ".chatroom_users.dat"
 
 class states:
     """
@@ -79,7 +81,7 @@ class UserSession(LineReceiver):
         If it's a command, do what they say.
         If it's a message, broadcast it to the other users.
         """
-        is_command = lambda l: l.startswith("/") or l.startswith("^")
+        is_command = lambda l: l.startswith("/")
         if is_command(line):
             self.handle_command(line)
         else:
@@ -91,7 +93,7 @@ class UserSession(LineReceiver):
         """
         cmd, *params = text.split()
         print("Command from {}: {}".format(self.longname, cmd))
-        if cmd in ("/quit", "/leave", "^C"):
+        if cmd in ("/quit", "/leave"):
             reason = ' '.join(params)
             self.reason_for_quit = reason
             self.transport.loseConnection()
@@ -142,9 +144,11 @@ class UserSession(LineReceiver):
         self.sendLine("Account created successfully.")
         # Display some personalised welcome information.
         self.welcome()
-        # And output some debug info.
+        # Output some debug info.
         print("Anonymous({}) registered as {}"
               "".format(self.addr.host, self.name))
+        # Save our changes.
+        save_users(self.factory.users)
 
     def check_username(self, uname):
         """
@@ -212,8 +216,8 @@ class UserSessionFactory(protocol.Factory):
     Store state across sessions (currently, just the number of players).
     """
     def __init__(self):
-        self.connections = {}
-        self.users = {}
+        self.connections = set()
+        self.users = load_users()
 
     @property
     def num_users(self):
@@ -223,13 +227,13 @@ class UserSessionFactory(protocol.Factory):
         """
         Remove a connection from our mapping.
         """
-        del self.connections[conn.addr]
+        self.connections.remove(conn)
 
     def broadcast_message(self, message, exception=None):
         """
         Broadcast `message` to every connected user except `exception`.
         """
-        for conn in self.connections.values():
+        for conn in self.connections:
             if conn is not exception:
                 conn.sendLine(message)
 
@@ -237,10 +241,32 @@ class UserSessionFactory(protocol.Factory):
         """
         Create and return a new connection instance, adding it to a dict of users.
         """
-        self.connections[addr] = UserSession(self, addr)
-        return self.connections[addr]
+        sess = UserSession(self, addr)
+        self.connections.add(sess)
+        return sess
 
 
+def save_users(users):
+    """
+    Save the user-password mapping to the local folder.
+    """
+    with open(USERS_FILE, "wb") as users_file:
+        pickle.dump(users, users_file)
+        
+
+def load_users():
+    """
+    Attempt to load users from the data file.
+    If one doesn't exist, just return a new mapping.
+    """
+    try:
+        with open(USERS_FILE, "rb") as f:
+            return pickle.load(f)
+    except FileNotFoundError:
+        return {}
+
+        
 reactor.listenTCP(8001, UserSessionFactory())
 print("Server running at localhost:8001. Connect using `telnet localhost 8001`.")
+
 reactor.run()
