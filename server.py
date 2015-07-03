@@ -20,6 +20,7 @@ class states:
     REQUESTING_NAME = 1
     REQUESTING_PASSWORD = 2
     REQUESTING_NEW_PASSWORD = 3
+    CHANGING_USERNAME = 4
 
 
 class UserSession(LineReceiver):
@@ -99,6 +100,12 @@ class UserSession(LineReceiver):
             reason = ' '.join(params)
             self.reason_for_quit = reason
             self.transport.loseConnection()
+        elif cmd in ("/nick", "/user", "/username"):
+            if params:
+                self.got_username('_'.join(params))
+            else:
+                self.sendLine("Usage: {} <new nick>"
+                              "".format(cmd))
             
     def lineReceived(self, line):
         """
@@ -158,7 +165,7 @@ class UserSession(LineReceiver):
         If so, proceed with login or registration.
         If not, stay in the same state and ask for a repeat.
         """
-        valid = re.compile("^[A-Za-z0-9 ]+$")
+        valid = re.compile("^[A-Za-z0-9_]+$")
         is_valid = lambda attempt: bool(valid.fullmatch(attempt))
 
         if is_valid(uname):
