@@ -9,10 +9,11 @@ from os.path import expanduser as abs_path
 from twisted.internet import reactor, protocol
 from twisted.protocols.basic import LineReceiver
 
+
 PORT = 8001
 DEFAULT_ADMIN_PASS = "open_sesame"
 USERS_FILE = abs_path("~/.chatroom_users.dat")
-OP_CMDS = ["/kick", "/ban", "/unban", "/kickall", "/op"]
+OP_CMDS = ["/kick", "/op", "/deop"]
 
 
 def requires_op(cmd):
@@ -24,16 +25,18 @@ def requires_op(cmd):
     
 class states:
     """
-    Enumerate all states that an IOStream protocol instance can be in.
+    Enumerate all states a UserSession can be in.
     """
     REGISTERED = 0
     REQUESTING_NAME = 1
-    REQUESTING_PASSWORD = 2
+    REQUESTING_LOGIN_PASSWORD = 2
     REQUESTING_NEW_PASSWORD = 3
     CHANGING_USERNAME = 4
     CHOOSING_KICK_OTHER_SESS = 5
+    REQUESTING_CURRENT_PASSWORD = 6
+    REQUESTING_NEW_ACC_PASSWORD = 7
 
-
+    
 class UserSession(LineReceiver):
     """
     Represent a single user-session. Handles registering, logins, sending
@@ -74,6 +77,7 @@ class UserSession(LineReceiver):
         """
         super().sendLine(bytes(line, encoding="utf-8"))
 
+
     def lineReceived(self, line):
         """
         When we get a new line, check what state we're in and act accordingly.
@@ -83,15 +87,15 @@ class UserSession(LineReceiver):
         except UnicodeDecodeError:
             # Just don't even try to handle it.
             return
-
         line_callbacks = {
             states.REGISTERED: self.command_or_msg,
             states.REQUESTING_NAME: self.got_username,
-            states.REQUESTING_PASSWORD: self.got_password,
+            states.REQUESTING_CURRENT_PASSWORD: self.got_current_password,
+            states.REQUESTING_LOGIN_PASSWORD: self.got_login_password,
             states.REQUESTING_NEW_PASSWORD: self.got_new_password,
-            states.CHOOSING_KICK_OTHER_SESS: self.got_kick_choice
+            states.REQUESTING_NEW_ACC_PASSWORD: self.got_new_acc_password,
+            states.CHOOSING_KICK_OTHER_SESS: self.got_kick_choice,
             }
-        
         line_callbacks[self.state](line)
 
     def command_or_msg(self, line):
@@ -113,8 +117,7 @@ class UserSession(LineReceiver):
         or registration (after checking that the username is not currently
         mapped to a session).
         """
-        valid = re.compile("^[A-Za-z0-9_]+$")
-        is_valid = lambda attempt: bool(valid.fullmatch(attempt))
+        is_valid = re.compile("^[A-Za-z0-9_]+$").fullmatch
         if not is_valid(uname):
             self.sendLine("Please enter a valid username."
                           "(Type below and press Return)")
@@ -125,11 +128,11 @@ class UserSession(LineReceiver):
             self.requested_uname = uname
             self.state = states.CHOOSING_KICK_OTHER_SESS
         elif uname in self.factory.users:
-            self.request_password(uname)
+            self.request_login_password(uname)
         else:
             self.request_new_password(uname)
 
-    def got_password(self, pword):
+    def got_login_password(self, pword):
         """
         Checks the user's password against the value stored for that username.
         If it's right, allow them in. If not, just stay in the same state.
@@ -148,6 +151,14 @@ class UserSession(LineReceiver):
 
     def got_new_password(self, pword):
         """
+        Change the current user's password to the one provided.
+        """
+        self.factory.users[self.name]["pword"] = pword
+        self.state = states.REGISTERED
+        self.sendLine("! Password changed")
+
+    def got_new_acc_password(self, pword):
+        """
         Make an account using the requested username and password.
         Welcome the user and log their entrance.
         """
@@ -164,6 +175,17 @@ class UserSession(LineReceiver):
         # Save our changes.
         save_users(self.factory.users)
 
+    def got_current_password(self, pword):
+        """
+        The user has entered their current password in order to change it.
+        """
+        if pword == self.factory.users[self.name]["pword"]:
+            self.sendLine("Enter new password:")
+            self.state = states.REQUESTING_NEW_PASSWORD
+        else:
+            self.sendLine("Incorrect password")
+            self.sendLine("Enter password:")
+
     def got_kick_choice(self, yesno):
         """
         Determine whether the user wants to kick their other session and act
@@ -171,7 +193,7 @@ class UserSession(LineReceiver):
         """
         if yesno in ("y", "Y"):
             self.sendLine("Enter password:")
-            self.state = states.REQUESTING_PASSWORD
+            self.state = states.REQUESTING_LOGIN_PASSWORD
         elif yesno in ("n", "N"):
             self.sendLine("Enter name:")
             self.state = states.REQUESTING_NAME
@@ -180,13 +202,13 @@ class UserSession(LineReceiver):
             self.sendLine("Enter Y or N: "
                           "kick the other session using this account?")
 
-    def request_password(self, uname):
+    def request_login_password(self, uname):
         """
         Called when the requested username is preexisting.
         """
         self.sendLine("Password:")
         self.requested_uname = uname
-        self.state = states.REQUESTING_PASSWORD
+        self.state = states.REQUESTING_LOGIN_PASSWORD
 
     def msg_format(self, line):
         """
@@ -214,7 +236,6 @@ class UserSession(LineReceiver):
         """
         cmd, *params = text.split()
         print("Command from {}: {}".format(self.longname, text))
-
         if requires_op(cmd) and not self.is_op:
             self.sendLine("You are not OP.")
             return
@@ -224,6 +245,7 @@ class UserSession(LineReceiver):
             self.transport.loseConnection()
         elif cmd in ("/nick", "/user", "/username"):
             if params:
+                del self.factory.online_users[self.name]
                 self.got_username('_'.join(params))
             else:
                 self.sendLine("Usage: {} <new nick>".format(cmd))
@@ -248,7 +270,9 @@ class UserSession(LineReceiver):
                 self.sendLine("! usage: /deop <username> ...")
             for user in params:
                 self.factory.deop(user, requester=self)
-
+        elif cmd == "/changepass":
+            self.sendLine("Current password: ")
+            self.state = states.REQUESTING_CURRENT_PASSWORD
 
     def welcome(self):
         """
@@ -257,7 +281,6 @@ class UserSession(LineReceiver):
         """
         print("Anonymous({}) logged in as {}"
               "".format(self.addr.host, self.name))
-
         self.sendLine("Welcome {}!".format(self.name))
         self.sendLine("{} people online currently."
                       "".format(self.factory.num_users))
@@ -270,7 +293,6 @@ class UserSession(LineReceiver):
         Kick any connection with the same name as us.
         """
         self.factory.kick_by_name(self.requested_uname)
-        
 
     def request_new_password(self, uname):
         """
@@ -399,7 +421,7 @@ def save_users(users):
 def load_users():
     """
     Attempt to load users from the data file.
-    If one doesn't exist, just return a new mapping.
+    If one doesn't exist, just return a new mapping with a single admin user.
     """
     try:
         with open(USERS_FILE, "rb") as f:
