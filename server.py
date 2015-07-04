@@ -156,6 +156,7 @@ class UserSession(LineReceiver):
         self.factory.users[self.name]["pword"] = pword
         self.state = states.REGISTERED
         self.sendLine("! Password changed")
+        save_users(self.factory.users)
 
     def got_new_acc_password(self, pword):
         """
