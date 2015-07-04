@@ -21,6 +21,7 @@ def requires_op(cmd):
     """
     return cmd in OP_CMDS
 
+    
 class states:
     """
     Enumerate all states that an IOStream protocol instance can be in.
@@ -31,12 +32,12 @@ class states:
     REQUESTING_NEW_PASSWORD = 3
     CHANGING_USERNAME = 4
     SHOULD_KICK_OTHER_ACC = 5
-    
+
+
 class UserSession(LineReceiver):
     """
     Represent a single user-session. Handles registering, logins, sending messages etc.
     """
-
     def __init__(self, factory, addr):
         self.factory = factory
         self.muted = False
@@ -262,7 +263,7 @@ class UserSession(LineReceiver):
         self.sendLine("Password:")
         self.requested_uname = uname
         self.state = states.REQUESTING_PASSWORD
-        
+
     def request_new_password(self, uname):
         """
         Called when the requested username is new.
@@ -385,7 +386,7 @@ def save_users(users):
     """
     with open(USERS_FILE, "wb") as users_file:
         pickle.dump(users, users_file)
-        
+
 
 def load_users():
     """
@@ -399,7 +400,7 @@ def load_users():
         return {"admin": {"pword": DEFAULT_ADMIN_PASS,
                           "is_op": True}}
 
-        
+
 reactor.listenTCP(PORT, UserSessionFactory())
 print("Server running at localhost:{p}. Connect using `telnet localhost {p}`."
       "".format(p=PORT))
