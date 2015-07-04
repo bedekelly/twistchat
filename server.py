@@ -31,18 +31,19 @@ class states:
     REQUESTING_PASSWORD = 2
     REQUESTING_NEW_PASSWORD = 3
     CHANGING_USERNAME = 4
-    SHOULD_KICK_OTHER_ACC = 5
+    CHOOSING_KICK_OTHER_SESS = 5
 
 
 class UserSession(LineReceiver):
     """
-    Represent a single user-session. Handles registering, logins, sending messages etc.
+    Represent a single user-session. Handles registering, logins, sending
+    messages etc.
     """
     def __init__(self, factory, addr):
         self.factory = factory
         self.muted = False
         self.addr = addr
-        self.reason_for_quit = ""
+        self.reason_for_quit = None
         self.name = "Anonymous"
         self.is_op = False
 
@@ -73,24 +74,25 @@ class UserSession(LineReceiver):
         """
         super().sendLine(bytes(line, encoding="utf-8"))
 
-    def msg_format(self, line):
+    def lineReceived(self, line):
         """
-        When we're sending a message, prepend a nicely-formatted version of our username
-        and hostname.
+        When we get a new line, check what state we're in and act accordingly.
         """
-        return "[{}] {}".format(self.name, line.strip())
+        try:
+            line = line.decode("utf-8").strip()
+        except UnicodeDecodeError:
+            # Just don't even try to handle it.
+            return
 
-    def broadcast_msg(self, line):
-        """
-        Send a formatted message to each connected user except this one.
-        """
-        self.factory.broadcast_message(self.msg_format(line), exception=self)
-
-    def broadcast_noti(self, line):
-        """
-        Send a formatted server notification to each connected user except this one.
-        """
-        self.factory.broadcast_message(line, exception=self)
+        line_callbacks = {
+            states.REGISTERED: self.command_or_msg,
+            states.REQUESTING_NAME: self.got_username,
+            states.REQUESTING_PASSWORD: self.got_password,
+            states.REQUESTING_NEW_PASSWORD: self.got_new_password,
+            states.CHOOSING_KICK_OTHER_SESS: self.got_kick_choice
+            }
+        
+        line_callbacks[self.state](line)
 
     def command_or_msg(self, line):
         """
@@ -104,12 +106,114 @@ class UserSession(LineReceiver):
         elif not self.muted:
             self.broadcast_msg(line)
 
+    def got_username(self, uname):
+        """
+        Called when the user has entered their username.
+        Check whether the username is valid, and if so, continue with the login
+        or registration (after checking that the username is not currently
+        mapped to a session).
+        """
+        valid = re.compile("^[A-Za-z0-9_]+$")
+        is_valid = lambda attempt: bool(valid.fullmatch(attempt))
+        if not is_valid(uname):
+            self.sendLine("Please enter a valid username."
+                          "(Type below and press Return)")
+            return
+        if uname in self.factory.online_users:
+            self.sendLine("This account is being accessed somewhere else.")
+            self.sendLine("Kick the other account? [Y/N]")
+            self.requested_uname = uname
+            self.state = states.CHOOSING_KICK_OTHER_SESS
+        elif uname in self.factory.users:
+            self.request_password(uname)
+        else:
+            self.request_new_password(uname)
+
+    def got_password(self, pword):
+        """
+        Checks the user's password against the value stored for that username.
+        If it's right, allow them in. If not, just stay in the same state.
+        """
+        user_data = self.factory.users[self.requested_uname]
+        if user_data["pword"] == pword:
+            self.is_op = user_data["is_op"]
+            # Kick any session with our name, then set our name.
+            self.kick_other_sessions()
+            self.name = self.requested_uname
+            self.state = states.REGISTERED
+            self.factory.online_users[self.name] = self
+            self.welcome()
+        else:
+            self.sendLine("Password incorrect. Enter password:")
+
+    def got_new_password(self, pword):
+        """
+        Make an account using the requested username and password.
+        Welcome the user and log their entrance.
+        """
+        self.name = self.requested_uname
+        self.factory.users[self.name] = {'pword': pword, "is_op": False}
+        self.factory.online_users[self.name] = self
+        self.state = states.REGISTERED
+        self.sendLine("Account created successfully.")
+        print("Anonymous({}) registered as {}"
+              "".format(self.addr.host, self.name))
+        # Display some personalised welcome information.
+        self.welcome()
+        # Output some debug info.
+        # Save our changes.
+        save_users(self.factory.users)
+
+    def got_kick_choice(self, yesno):
+        """
+        Determine whether the user wants to kick their other session and act
+        accordingly.
+        """
+        if yesno in ("y", "Y"):
+            self.sendLine("Enter password:")
+            self.state = states.REQUESTING_PASSWORD
+        elif yesno in ("n", "N"):
+            self.sendLine("Enter name:")
+            self.state = states.REQUESTING_NAME
+        else:
+            # Don't change state: the next line should be sent to this function.
+            self.sendLine("Enter Y or N: "
+                          "kick the other session using this account?")
+
+    def request_password(self, uname):
+        """
+        Called when the requested username is preexisting.
+        """
+        self.sendLine("Password:")
+        self.requested_uname = uname
+        self.state = states.REQUESTING_PASSWORD
+
+    def msg_format(self, line):
+        """
+        When we're sending a message, prepend a nicely-formatted version of our
+        username and hostname.
+        """
+        return "[{}] {}".format(self.name, line.strip())
+
+    def broadcast_msg(self, line):
+        """
+        Send a formatted message to each connected user except this one.
+        """
+        self.factory.broadcast_message(self.msg_format(line), exception=self)
+
+    def broadcast_noti(self, line):
+        """
+        Send a formatted server notification to each connected user except this
+        one.
+        """
+        self.factory.broadcast_message(line, exception=self)
+
     def handle_command(self, text):
         """
         Process a command like /quit or /leave.
         """
         cmd, *params = text.split()
-        print("Command from {}: {}".format(self.longname, cmd))
+        print("Command from {}: {}".format(self.longname, text))
 
         if requires_op(cmd) and not self.is_op:
             self.sendLine("You are not OP.")
@@ -133,7 +237,7 @@ class UserSession(LineReceiver):
             if not params:
                 self.sendLine("! usage: /kick <username> ...")
             for user in params:
-                self.factory.kick(user)
+                self.factory.kick(user, kicked_by=self)
         elif cmd == "/op":
             if not params:
                 self.sendLine("! usage: /op <username> ...")
@@ -145,42 +249,6 @@ class UserSession(LineReceiver):
             for user in params:
                 self.factory.deop(user, requester=self)
 
-    def lineReceived(self, line):
-        """
-        When we get a new line, check what state we're in and act accordingly.
-        """
-        try:
-            line = line.decode("utf-8").strip()
-        except UnicodeDecodeError:
-            # Just don't even try to handle it.
-            return
-
-        # Check for each state in turn and handle accordingly.
-        if self.state == states.REQUESTING_NAME:
-            self.got_username(line)
-        elif self.state == states.REGISTERED:
-            self.command_or_msg(line)
-        elif self.state == states.REQUESTING_PASSWORD:
-            self.got_password(line)
-        elif self.state == states.REQUESTING_NEW_PASSWORD:
-            self.got_new_password(line)
-        elif self.state == states.SHOULD_KICK_OTHER_ACC:
-            self.maybe_kick(line)
-
-    def maybe_kick(self, yesno):
-        """
-        Determine whether the user wants to kick their other session
-        and act accordingly.
-        """
-        if yesno in ("y", "Y"):
-            self.sendLine("Enter password:")
-            self.state = states.REQUESTING_PASSWORD
-        elif yesno in ("n", "N"):
-            self.sendLine("Enter name:")
-            self.state = states.REQUESTING_NAME
-        else:
-            # Don't change state: the next line should be sent to this function.
-            self.sendLine("Enter Y or N: kick the other session using this account?")
 
     def welcome(self):
         """
@@ -197,72 +265,12 @@ class UserSession(LineReceiver):
             self.broadcast_noti("{} joined the chatroom."
                                 "".format(self.longname))
 
-    def got_new_password(self, pword):
-        """
-        Make an account using the requested username and password.
-        Welcome the user and log their entrance.
-        """
-        self.name = self.requested_uname
-        self.factory.users[self.name] = {'pword': pword, "is_op": False}
-        self.factory.online_users[self.name] = self
-        self.state = states.REGISTERED
-        self.sendLine("Account created successfully.")
-        # Display some personalised welcome information.
-        self.welcome()
-        # Output some debug info.
-        print("Anonymous({}) registered as {}"
-              "".format(self.addr.host, self.name))
-        # Save our changes.
-        save_users(self.factory.users)
-
-    def got_username(self, uname):
-        """
-        Check if the given username is valid.
-        If so, proceed with login or registration.
-        If not, stay in the same state and ask for a repeat.
-        """
-        valid = re.compile("^[A-Za-z0-9_]+$")
-        is_valid = lambda attempt: bool(valid.fullmatch(attempt))
-
-        if is_valid(uname):
-            # If the line we got is a valid username, proceed to register or login.
-            self.got_username(uname)
-        else:
-            # If the line is empty or invalid, error and try again.
-            self.sendLine("Please enter a valid username. (Type below and press Return)")
-
     def kick_other_sessions(self):
         """
         Kick any connection with the same name as us.
         """
-        for conn in self.factory.connections:
-            if conn.name == self.name and conn is not self:
-                self.factory.kick(conn)
-                break
-
-    def got_password(self, pword):
-        """
-        Checks the user's password against the value stored for that username.
-        If it's right, allow them in. If not, just stay in the same state.
-        """
-        user_data = self.factory.users[self.requested_uname]
-        if user_data["pword"] == pword:
-            self.is_op = user_data["is_op"]
-            self.name = self.requested_uname
-            self.state = states.REGISTERED
-            self.kick_other_sessions()
-            self.factory.online_users[self.name] = self
-            self.welcome()
-        else:
-            self.sendLine("Password incorrect. Enter password:")
-
-    def request_password(self, uname):
-        """
-        Called when the requested username is preexisting.
-        """
-        self.sendLine("Password:")
-        self.requested_uname = uname
-        self.state = states.REQUESTING_PASSWORD
+        self.factory.kick_by_name(self.requested_uname)
+        
 
     def request_new_password(self, uname):
         """
@@ -271,20 +279,6 @@ class UserSession(LineReceiver):
         self.requested_uname = uname
         self.sendLine("Enter new password:")
         self.state = states.REQUESTING_NEW_PASSWORD
-
-    def got_username(self, uname):
-        """
-        Called when the user has entered their username.
-        """
-        if uname in self.factory.online_users:
-            self.sendLine("This account is being accessed somewhere else.")
-            self.sendLine("Kick the other account? [Y/N]")
-            self.requested_uname = uname
-            self.state = states.SHOULD_KICK_OTHER_ACC
-        elif uname in self.factory.users:
-            self.request_password(uname)
-        else:
-            self.request_new_password(uname)
 
     @property
     def longname(self):
@@ -321,8 +315,8 @@ class UserSessionFactory(protocol.Factory):
 
     def deop(self, username, requester):
         """
-        Remove a currently-online user's OP status, or send the requester a failure
-        message.
+        Remove a currently-online user's OP status, or send the requester a
+        failure message.
         """
         try:
             user = self.online_users[username]
@@ -336,18 +330,27 @@ class UserSessionFactory(protocol.Factory):
             user.is_op = False
             save_users(self.users)
 
-    def kick(self, username):
+    def kick_by_name(self, username, kicked_by=None):
         """
-        Kick a user currently on the channel.
+        Kick a user by providing their username.
         """
         try:
             conn = self.online_users[username]
         except KeyError:
-            pass
+            if kicked_by is not None:
+                kicked_by.sendLine("! That user isn't online right now.")
         else:
-            conn.muted = True
-            conn.transport.loseConnection()
-            self.broadcast_message("! {} was kicked".format(username))
+            self.kick(conn, kicked_by=kicked_by)
+
+    def kick(self, conn, kicked_by=None):
+        """
+        Kick a user currently on the channel directly by their connection.
+        """
+        conn.muted = True  # Prevent "lost connection" message.
+        conn.transport.loseConnection()
+        msg = "! {} was kicked".format(conn.name)
+        if kicked_by is not None:
+            msg += " by {}".format(kicked_by.name)
 
     @property
     def num_users(self):
@@ -358,10 +361,14 @@ class UserSessionFactory(protocol.Factory):
 
     def remove_connection(self, conn):
         """
-        Remove a connection from our mapping.
+        Remove a connection from our current server state.
         """
         self.connections.remove(conn)
-        del self.online_users[conn.name]
+        try:
+            del self.online_users[conn.name]
+        except KeyError:
+            # No problem, the connection wasn't registered.
+            pass
 
     def broadcast_message(self, message, exception=None):
         """
@@ -373,7 +380,8 @@ class UserSessionFactory(protocol.Factory):
 
     def buildProtocol(self, addr):
         """
-        Create and return a new connection instance, adding it to a dict of users.
+        Create and return a new connection instance, adding it to a dict of
+        users.
         """
         sess = UserSession(self, addr)
         self.connections.add(sess)
@@ -402,6 +410,6 @@ def load_users():
 
 
 reactor.listenTCP(PORT, UserSessionFactory())
-print("Server running at localhost:{p}. Connect using `telnet localhost {p}`."
-      "".format(p=PORT))
+print("Server running at localhost:{p}."
+      "Connect using `telnet localhost {p}`.".format(p=PORT))
 reactor.run()
