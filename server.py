@@ -183,7 +183,7 @@ class UserSession(LineReceiver):
         """
         if pword == self.factory.users[self.name]["pword"]:
             self.sendLine("Enter new password:")
-            self.state = states.REQUSTING_NEW_PASSWORD
+            self.state = states.REQUESTING_NEW_PASSWORD
         else:
             self.sendLine("Incorrect password")
             self.sendLine("Enter password:")
@@ -259,7 +259,7 @@ class UserSession(LineReceiver):
             if not params:
                 self.sendLine("! usage: /kick <username> ...")
             for user in params:
-                self.factory.kick(user, kicked_by=self)
+                self.factory.kick_by_name(user, kicked_by=self)
         elif cmd == "/op":
             if not params:
                 self.sendLine("! usage: /op <username> ...")
