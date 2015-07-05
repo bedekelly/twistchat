@@ -35,7 +35,7 @@ class states:
     CHOOSING_KICK_OTHER_SESS = 5
     REQUESTING_CURRENT_PASSWORD = 6
     REQUESTING_NEW_ACC_PASSWORD = 7
-
+    REQUESTING_MESSAGE_TEXT = 8
     
 class UserSession(LineReceiver):
     """
@@ -77,7 +77,6 @@ class UserSession(LineReceiver):
         """
         super().sendLine(bytes(line, encoding="utf-8"))
 
-
     def lineReceived(self, line):
         """
         When we get a new line, check what state we're in and act accordingly.
@@ -95,6 +94,7 @@ class UserSession(LineReceiver):
             states.REQUESTING_NEW_PASSWORD: self.got_new_password,
             states.REQUESTING_NEW_ACC_PASSWORD: self.got_new_acc_password,
             states.CHOOSING_KICK_OTHER_SESS: self.got_kick_choice,
+            states.REQUESTING_MESSAGE_TEXT: self.got_message_text,
             }
         line_callbacks[self.state](line)
 
@@ -121,16 +121,17 @@ class UserSession(LineReceiver):
         if not is_valid(uname):
             self.sendLine("Please enter a valid username."
                           "(Type below and press Return)")
-            return
+            return None
+
+        self.requested_uname = uname
         if uname in self.factory.online_users:
             self.sendLine("This account is being accessed somewhere else.")
             self.sendLine("Kick the other account? [Y/N]")
-            self.requested_uname = uname
             self.state = states.CHOOSING_KICK_OTHER_SESS
         elif uname in self.factory.users:
-            self.request_login_password(uname)
+            self.request_login_password()
         else:
-            self.request_new_password(uname)
+            self.request_new_acc_password()
 
     def got_login_password(self, pword):
         """
@@ -182,7 +183,7 @@ class UserSession(LineReceiver):
         """
         if pword == self.factory.users[self.name]["pword"]:
             self.sendLine("Enter new password:")
-            self.state = states.REQUESTING_NEW_PASSWORD
+            self.state = states.REQUSTING_NEW_PASSWORD
         else:
             self.sendLine("Incorrect password")
             self.sendLine("Enter password:")
@@ -203,13 +204,11 @@ class UserSession(LineReceiver):
             self.sendLine("Enter Y or N: "
                           "kick the other session using this account?")
 
-    def request_login_password(self, uname):
+    def got_message_text(self, text):
         """
-        Called when the requested username is preexisting.
+        Wrapper callback to send a private message containing `text`.
         """
-        self.sendLine("Password:")
-        self.requested_uname = uname
-        self.state = states.REQUESTING_LOGIN_PASSWORD
+        self.factory.message(self, self.msg_recipient, text)
 
     def msg_format(self, line):
         """
@@ -274,6 +273,17 @@ class UserSession(LineReceiver):
         elif cmd == "/changepass":
             self.sendLine("Current password: ")
             self.state = states.REQUESTING_CURRENT_PASSWORD
+        elif cmd in ("/message", "/msg"):
+            if not params:
+                self.sendLine("! usage: /message <user> [text ...]")
+            elif len(params) == 1:
+                self.msg_recipient = params[0]
+                self.sendLine("Message text:")
+                self.state = states.REQUESTING_MESSAGE_TEXT
+            else:
+                recipient, *text = params
+                text = ' '.join(text)
+                self.factory.message(self, recipient, text)
 
     def welcome(self):
         """
@@ -295,11 +305,24 @@ class UserSession(LineReceiver):
         """
         self.factory.kick_by_name(self.requested_uname)
 
-    def request_new_password(self, uname):
+    def request_login_password(self):
         """
-        Called when the requested username is new.
+        Called when the requested username is preexisting.
         """
-        self.requested_uname = uname
+        self.sendLine("Password:")
+        self.state = states.REQUESTING_LOGIN_PASSWORD
+
+    def request_new_acc_password(self):
+        """
+        Ask the user to input a password for their new account.
+        """
+        self.sendLine("Enter password for new account:")
+        self.state = states.REQUESTING_NEW_ACC_PASSWORD
+
+    def request_new_password(self):
+        """
+        The user wants to change their password.
+        """
         self.sendLine("Enter new password:")
         self.state = states.REQUESTING_NEW_PASSWORD
 
@@ -352,6 +375,21 @@ class UserSessionFactory(protocol.Factory):
             self.users[username]["is_op"] = False
             user.is_op = False
             save_users(self.users)
+
+    def message(self, sender, recip_name, text):
+        """
+        Send a private message to a single user.
+        """
+        try:
+            recipient = self.online_users[recip_name]
+        except KeyError:
+            sender.sendLine("! That user isn't online right now")
+        else:
+            msg = "<msg: {}> {}".format(sender.name, text)
+            recipient.sendLine(msg)
+            sender.sendLine("! Message sent")
+        finally:
+            sender.state = states.REGISTERED
 
     def kick_by_name(self, username, kicked_by=None):
         """
