@@ -1,0 +1,6 @@
+# TwistChat config file.
+
+PORT = 8001  # Change this to 23 if you don't want to have to specify the port.
+DEFAULT_ADMIN_PASS = "open_sesame"
+USERS_FILE = "~/.twistchat/users.dat"
+OP_CMDS = ["/op", "/deop", "/kick"]

@@ -4,23 +4,24 @@ A mini chatroom server written in Twisted.
 """
 
 import re
+import yaml
 import pickle
-from os.path import expanduser as abs_path
+from os.path import expanduser as path_to
+from pkg_resources import Requirement, resource_filename
 from twisted.internet import reactor, protocol
 from twisted.protocols.basic import LineReceiver
 
-
-PORT = 8001
-DEFAULT_ADMIN_PASS = "open_sesame"
-USERS_FILE = abs_path("~/.chatroom_users.dat")
-OP_CMDS = ["/kick", "/op", "/deop"]
+# Load the config filepath via setuptools' Requirement API.
+CONFIG_FILENAME = "twistchat.yml"
+CONFIG_PATH = resource_filename(Requirement.parse("twistchat"),
+                                CONFIG_FILENAME)
 
 
 def requires_op(cmd):
     """
     Determine whether a command requires the user to be an operator.
     """
-    return cmd in OP_CMDS
+    return cmd in config["OP_CMDS"]
 
     
 class states:
@@ -453,7 +454,7 @@ def save_users(users):
     """
     Save the user-password mapping to the local folder.
     """
-    with open(USERS_FILE, "wb") as users_file:
+    with open(config["USERS_FILE"], "wb") as users_file:
         pickle.dump(users, users_file)
 
 
@@ -463,14 +464,23 @@ def load_users():
     If one doesn't exist, just return a new mapping with a single admin user.
     """
     try:
-        with open(USERS_FILE, "rb") as f:
+        with open(config["USERS_FILE"], "rb") as f:
             return pickle.load(f)
     except FileNotFoundError:
-        return {"admin": {"pword": DEFAULT_ADMIN_PASS,
+        return {"admin": {"pword": config["DEFAULT_ADMIN_PASS"],
                           "is_op": True}}
 
 
-reactor.listenTCP(PORT, UserSessionFactory())
-print("Server running at localhost:{p}."
-      "Connect using `telnet localhost {p}`.".format(p=PORT))
-reactor.run()
+def main():
+    """
+    Provides an entry point for setuptools.
+    """
+    reactor.listenTCP(config["PORT"], UserSessionFactory())
+    print("Server running at localhost:{p}."
+          "Connect using `telnet localhost {p}`.".format(p=PORT))
+    reactor.run()
+
+if __name__ == "__main__":
+    with open(CONFIG_PATH, "r") as conf_file:
+        config = yaml.safe_load(conf_file)
+    main()
