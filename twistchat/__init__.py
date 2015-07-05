@@ -1,6 +1,7 @@
 """
 Check whether the config file exists before running the program.
 """
+import os.path
 
 if not os.path.exists("~/.twistchat/twistchat.yml"):
     print("""
