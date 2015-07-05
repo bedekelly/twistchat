@@ -6,15 +6,15 @@ A mini chatroom server written in Twisted.
 import re
 import yaml
 import pickle
+from .misc import CONFIG_PATH
 from os.path import expanduser as path_to
-from pkg_resources import Requirement, resource_filename
 from twisted.internet import reactor, protocol
 from twisted.protocols.basic import LineReceiver
 
-# Load the config filepath via setuptools' Requirement API.
-CONFIG_FILENAME = "twistchat.yml"
-CONFIG_PATH = resource_filename(Requirement.parse("twistchat"),
-                                CONFIG_FILENAME)
+
+# Make the config info available globally.
+with open(CONFIG_PATH, "r") as conf_file:
+    config = yaml.safe_load(conf_file)
 
 
 def requires_op(cmd):
@@ -454,7 +454,7 @@ def save_users(users):
     """
     Save the user-password mapping to the local folder.
     """
-    with open(config["USERS_FILE"], "wb") as users_file:
+    with open(path_to(config["USERS_FILE"]), "wb") as users_file:
         pickle.dump(users, users_file)
 
 
@@ -464,7 +464,7 @@ def load_users():
     If one doesn't exist, just return a new mapping with a single admin user.
     """
     try:
-        with open(config["USERS_FILE"], "rb") as f:
+        with open(path_to(config["USERS_FILE"]), "rb") as f:
             return pickle.load(f)
     except FileNotFoundError:
         return {"admin": {"pword": config["DEFAULT_ADMIN_PASS"],
@@ -477,10 +477,9 @@ def main():
     """
     reactor.listenTCP(config["PORT"], UserSessionFactory())
     print("Server running at localhost:{p}."
-          "Connect using `telnet localhost {p}`.".format(p=PORT))
+          "Connect using `telnet localhost {p}`.".format(p=config["PORT"]))
     reactor.run()
 
+    
 if __name__ == "__main__":
-    with open(CONFIG_PATH, "r") as conf_file:
-        config = yaml.safe_load(conf_file)
     main()

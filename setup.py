@@ -22,7 +22,7 @@ setup(name='TwistChat',
           'Topic :: Communications :: Chat :: Internet Relay Chat',
           ],
       data_files=[(path_to("~/.twistchat"), ("etc/twistchat.yml.example",))],
-      install_requires=["twisted"],
+      install_requires=["twisted", "pyyaml"],
       url='https://bede.club/tag/chatroom',
       packages=['twistchat'],
      )

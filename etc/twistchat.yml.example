@@ -1,6 +1,20 @@
-# TwistChat config file.
+# TwistChat Configuration
+# =========================
 
-PORT = 8001  # Change this to 23 if you don't want to have to specify the port.
-DEFAULT_ADMIN_PASS = "open_sesame"
-USERS_FILE = "~/.twistchat/users.dat"
-OP_CMDS = ["/op", "/deop", "/kick"]
+# Change this to 23 if you don't want to have to specify the port.
+PORT: 8001
+
+# The default admin password. Log in as the admin and `/changepass` as soon
+# as possible!
+DEFAULT_ADMIN_PASS: "open_sesame"
+
+# Store all data about users here. Make sure to back it up!
+USERS_FILE: "~/.twistchat/users.dat"
+
+# List which commands require operator privileges.
+# Note that we trust operators with the privilege of granting or
+# rescinding the operator privilege of others (or themselves).
+OP_CMDS:
+  - "/op"
+  - "/deop"
+  - "/kick"
