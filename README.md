@@ -7,9 +7,10 @@ Check out some basic usage below, along with the new Inline Messaging feature:
 
 [![asciicast](https://asciinema.org/a/23003.png)](https://asciinema.org/a/23003)
 
+##Commands
+
 Here's a full list of the commands available. Some of them are likely familiar from IRC and the like.
 
-##Commands
 ####Open to all users
 * `/me <action> ...`
 * `/nick <newname> ...`
