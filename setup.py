@@ -27,6 +27,8 @@ setup(name='TwistChat',
       packages=['twistchat'],
      )
 
+print("*"*80)
 print("\n\nGreat, you've got TwistChat installed! Your config file should go\n"
       "in ~/.twistchat/twistchat.yml. An example config file is provided for\n"
       "you at ~/.twistchat/twistchat.yml.example.")
+print("*"*80)
