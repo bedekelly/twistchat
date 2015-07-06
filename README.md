@@ -1,7 +1,7 @@
 TwistChat
 =========
 
-IRC-style chatroom written in about 500 lines of Python.
+####IRC-style chatroom written in about 500 lines of Python.
 
 Check out some basic usage below, along with the new Inline Messaging feature:
 
