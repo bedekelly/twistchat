@@ -11,14 +11,14 @@ Check out some basic usage below, along with the new Inline Messaging feature:
 
 Here's a full list of the commands available. Some of them are likely familiar from IRC and the like.
 
-####Open to all users
+#####Open to all users:
 * `/me <action> ...`
 * `/nick <newname> ...`
 * `/msg <user> [msg ...]`
 * `/quit [reason ...]`
 * `/changepass [newpass]`
 
-####OP required for these:
+#####OP required for these:
 * `/kick <user> ...`
 * `/op <user>` and `/deop <user>`
 
