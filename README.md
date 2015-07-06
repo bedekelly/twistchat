@@ -3,7 +3,11 @@ TwistChat
 
 IRC-style chatroom written in about 500 lines of Python.
 
+Check out some basic usage below, along with the new Inline Messaging feature:
+
 [![asciicast](https://asciinema.org/a/23003.png)](https://asciinema.org/a/23003)
+
+Here's a full list of the commands available. Some of them are likely familiar from IRC and the like.
 
 ##Install
 ```
@@ -21,14 +25,4 @@ $ # Detatch screen/tmux, or open another window/switch device.
 $ telnet localhost 8001  # Or the port you selected in your config file.
 ```
 
-##Commands
-####Open to all users
-* `/me <action> ...`
-* `/nick <newname> ...`
-* `/msg <user> [msg ...]`
-* `/quit [reason ...]`
-* `/changepass [newpass]`
 
-####OP required for these:
-* `/kick <user> ...`
-* `/op <user>` and `/deop <user>`
