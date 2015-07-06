@@ -3,20 +3,22 @@ TwistChat
 
 IRC-style chatroom written in about 500 lines of Python.
 
+[![asciicast](https://asciinema.org/a/23003.png)](https://asciinema.org/a/23003)
+
 ##Install
 ```
-git clone https://github.com/bedekelly/twistchat
-cd twistchat
-python3 setup.py install --user
-cp ~/.twistchat/twistchat.yml{.example,}
-emacs ~/.twistchat/twistchat.yml  # Edit your config file.
+$ git clone https://github.com/bedekelly/twistchat
+$ cd twistchat
+$ python3 setup.py install --user
+$ cp ~/.twistchat/twistchat.yml{.example,}
+$ emacs ~/.twistchat/twistchat.yml  # Edit your config file if needed.
 ```
 
 ##Usage
 ```
-screen twistchat  # Or tmux etc., or just another terminal window.
-# Detatch screen/tmux, or open another window/switch device.
-telnet localhost 8001  # Or the port you selected in your config file.
+$ screen twistchat  # Or tmux etc., or just another terminal window.
+$ # Detatch screen/tmux, or open another window/switch device.
+$ telnet localhost 8001  # Or the port you selected in your config file.
 ```
 
 ##Commands
