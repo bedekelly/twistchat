@@ -13,7 +13,7 @@ if os.geteuid() == 0:
                           "\tpython3 setup.py install --user")
 
 setup(name='TwistChat',
-      version='0.1.0',
+      version='0.1.1',
       description='Chatroom server written using Twisted',
       license='The Unlicense',
       author='Bede Kelly',
