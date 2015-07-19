@@ -37,6 +37,7 @@ class states:
     REQUESTING_CURRENT_PASSWORD = 6
     REQUESTING_NEW_ACC_PASSWORD = 7
     REQUESTING_MESSAGE_TEXT = 8
+
     
 class UserSession(LineReceiver):
     """
