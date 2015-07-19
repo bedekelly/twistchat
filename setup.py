@@ -1,7 +1,16 @@
 #!/usr/bin/env python3
 
+import os
 from setuptools import setup
 from os.path import expanduser as path_to
+
+if os.geteuid() == 0:
+    raise PermissionError("Don't install as root!\n\n"
+                          "This script installs example configuration"
+                          " files in your home directory.\n"
+                          "To install, use the `--user` option:\n"
+                          "\tpip3 install --user twistchat\nOr:\n"
+                          "\tpython3 setup.py install --user")
 
 setup(name='TwistChat',
       version='0.1.0',
